@@ -62,7 +62,7 @@ void FrameHandlerMono::addImage(
 
 UpdateResult FrameHandlerMono::processFirstFrame()
 {
-
+  // schurvinsForward();
   // 设置先验深度，先验深度为1.0
   if(!initializer_->have_depth_prior_)
   {
@@ -113,6 +113,7 @@ UpdateResult FrameHandlerMono::processFirstFrame()
                     bundle_adjustment_type_==BundleAdjustmentType::kCeres);
   stage_ = Stage::kTracking;
   tracking_quality_ = TrackingQuality::kGood;
+  // schurvinsBackward();
   initializer_->reset();
   VLOG(1) << "Init: Selected second frame, triangulated initial map.";
   return UpdateResult::kKeyframe;

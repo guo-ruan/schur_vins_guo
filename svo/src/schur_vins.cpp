@@ -270,6 +270,10 @@ void SchurVINS::Solve3() {
                 continue;
 
             const svo::AugStatePtr& ft_state = feature->state.lock();
+            if (!ft_state) {  // TODO:guo
+                LOG(WARNING) << "Feature state is null after lock()";  
+                continue;  
+            }
             const int& state_idx = ft_state->index;
             const svo::Transformation& T_imu_cam = feature->camera_id == 0 ? T_imu_cam0 : T_imu_cam1;
             const Eigen::Matrix3d& R_i_c = T_imu_cam.getRotationMatrix();
@@ -374,6 +378,10 @@ void SchurVINS::Solve3() {
 
     // schur completment
     for (const svo::PointPtr& pt : schur_pts_) {
+        if (pt->V.determinant() < 1e-12) {  
+            LOG(WARNING) << "Matrix V is near singular, skipping point";  
+            continue;  
+        }  
         pt->Vinv = pt->V.inverse();
         // LOG(INFO) << "pt->V:\n" << pt->V;
         // LOG(INFO) << "pt->Vinv:\n" << pt->Vinv;
@@ -478,6 +486,12 @@ void SchurVINS::StateCorrection(const Eigen::MatrixXd& K, const Eigen::MatrixXd&
 
     Eigen::MatrixXd I_KH = Eigen::MatrixXd::Identity(K.rows(), K.rows()) - K * J;
     cov = I_KH * cov;
+    // 添加正定性检查  
+    Eigen::LLT<Eigen::MatrixXd> llt(cov);  
+    if (llt.info() != Eigen::Success) {  
+        LOG(WARNING) << "Covariance matrix is not positive definite, regularizing";  
+        cov += Eigen::MatrixXd::Identity(cov.rows(), cov.cols()) * 1e-6;  
+    }  
     Eigen::MatrixXd stable_cov = (cov + cov.transpose()) / 2.0;
     cov = stable_cov;
 }
@@ -743,7 +757,12 @@ int SchurVINS::Backward(const svo::FrameBundle::Ptr frame_bundle) {
 
     int idx = 0;
     std::for_each(states_map.begin(), states_map.end(),
-                  [&](svo::StateMap::value_type& it) { it.second->index = idx++; });
+                  [&](svo::StateMap::value_type& it) { 
+                    if (idx >= state_max) {  
+                        LOG(ERROR) << "State index overflow: " << idx;  
+                        return;  
+                    }  
+                    it.second->index = idx++; });
 
     Solve3();
 

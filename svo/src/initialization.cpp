@@ -85,6 +85,7 @@ void AbstractInitialization::reset()
 
 bool AbstractInitialization::trackFeaturesAndCheckDisparity(const FrameBundlePtr& frames)
 { 
+  LOG(INFO) << "=== Initialization tracking ==="; 
   tracker_->trackFrameBundle(frames); // 特征跟踪
   std::vector<size_t> num_tracked;
   std::vector<double> disparity;
@@ -93,6 +94,13 @@ bool AbstractInitialization::trackFeaturesAndCheckDisparity(const FrameBundlePtr
 
   const size_t num_tracked_tot =
       std::accumulate(num_tracked.begin(), num_tracked.end(), 0u);
+
+  LOG(INFO) << "Tracked features per frame:";  
+  for(size_t i = 0; i < num_tracked.size(); ++i) {  
+    LOG(INFO) << "  Frame " << i << ": " << num_tracked[i] << " features, disparity: " << disparity[i];  
+  }  
+  LOG(INFO) << "Total tracked: " << num_tracked_tot << " (required: " << options_.init_min_features << ")";  
+        
   const double avg_disparity =
       std::accumulate(disparity.begin(), disparity.end(), 0.0) / disparity.size();
   if(num_tracked_tot < options_.init_min_features)
