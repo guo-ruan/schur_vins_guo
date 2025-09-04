@@ -56,6 +56,7 @@ size_t FeatureTracker::trackFrameBundle(const FrameBundlePtr& nframe_kp1)
 
   // TODO(cfo): Implement prediction when relative rotation is known.
   // TODO(cfo): Datastructure could be simplified. We need only the first frame in track.
+  LOG(ERROR) << "**** 222 bundle_size_ = " << bundle_size_ << " ****";
   for(size_t frame_index = 0; frame_index < bundle_size_; ++frame_index)
   {
     FeatureTracks& tracks = active_tracks_.at(frame_index);
@@ -107,7 +108,7 @@ size_t FeatureTracker::trackFrameBundle(const FrameBundlePtr& nframe_kp1)
     // Insert new keypoints in frame.
     cur_frame->resizeFeatureStorage(new_keypoints_counter);
     cur_frame->px_vec_ = new_keypoints.leftCols(new_keypoints_counter);
-    cur_frame->score_vec_ = new_scores.head(new_keypoints_counter);
+    cur_frame->score_vec_ = new_scores.head(new_keypoints_counter); 
     cur_frame->track_id_vec_ = new_track_ids.head(new_keypoints_counter);
     cur_frame->num_features_ = new_keypoints_counter;
 
@@ -115,7 +116,7 @@ size_t FeatureTracker::trackFrameBundle(const FrameBundlePtr& nframe_kp1)
     frame_utils::computeNormalizedBearingVectors(
           cur_frame->px_vec_, *cur_frame->cam(), &cur_frame->f_vec_);
 
-    VLOG(4) << "Tracker: Frame-" << frame_index << " - tracked = " << new_keypoints_counter;
+    LOG(ERROR) << "**** 333 Tracker: Frame ****-" << frame_index << " - tracked = " << new_keypoints_counter;
   }
 
   return getTotalActiveTracks();
@@ -154,7 +155,6 @@ size_t FeatureTracker::initializeNewTracks(const FrameBundlePtr& nframe)
     }
 
     new_f = new_f.array().rowwise() / new_f.colwise().norm().array();
-    LOG(ERROR) << "1111 n_old = " << frame->num_features_;
 
     // 将新检测到的特征添加到帧中
     const size_t n_old = frame->num_features_;
@@ -167,7 +167,6 @@ size_t FeatureTracker::initializeNewTracks(const FrameBundlePtr& nframe)
     frame->level_vec_.segment(n_old, n_new) = new_levels;
     // TODO(cfo) frame->type_vec_
     frame->num_features_ = n_old+n_new;
-    LOG(ERROR) << "2222 n_new = " << n_new;
 
     // 创建特征点id
     FeatureTracks& tracks = active_tracks_.at(frame_index);

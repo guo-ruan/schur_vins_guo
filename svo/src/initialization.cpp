@@ -85,7 +85,6 @@ void AbstractInitialization::reset()
 
 bool AbstractInitialization::trackFeaturesAndCheckDisparity(const FrameBundlePtr& frames)
 { 
-  LOG(INFO) << "=== Initialization tracking ==="; 
   tracker_->trackFrameBundle(frames); // 特征跟踪
   std::vector<size_t> num_tracked;
   std::vector<double> disparity;
@@ -94,15 +93,10 @@ bool AbstractInitialization::trackFeaturesAndCheckDisparity(const FrameBundlePtr
 
   const size_t num_tracked_tot =
       std::accumulate(num_tracked.begin(), num_tracked.end(), 0u);
-
-  LOG(INFO) << "Tracked features per frame:";  
-  for(size_t i = 0; i < num_tracked.size(); ++i) {  
-    LOG(INFO) << "  Frame " << i << ": " << num_tracked[i] << " features, disparity: " << disparity[i];  
-  }  
-  LOG(INFO) << "Total tracked: " << num_tracked_tot << " (required: " << options_.init_min_features << ")";  
         
   const double avg_disparity =
       std::accumulate(disparity.begin(), disparity.end(), 0.0) / disparity.size();
+  LOG(ERROR) << "**** 444 num_tracked_tot ****  = " << num_tracked_tot;
   if(num_tracked_tot < options_.init_min_features)
   {
     tracker_->resetActiveTracks();
@@ -116,7 +110,6 @@ bool AbstractInitialization::trackFeaturesAndCheckDisparity(const FrameBundlePtr
   }
   if(avg_disparity < options_.init_min_disparity)
     return false;
-  LOG(ERROR) << "666 Feature tracking successful";
   return true;
 }
 
@@ -345,12 +338,12 @@ InitResult FivePointInit::addFrameBundle(
         Quaternion(R),
         ransac.model_coefficients_.rightCols(1));
 
-  LOG(ERROR) << "5Pt RANSAC:" << std::endl
-          << "# Iter = " << ransac.iterations_ << std::endl
-          << "# Inliers = " << ransac.inliers_.size() << std::endl
-          << "Model = " << ransac.model_coefficients_ << std::endl
-          << "T.rotation_matrix() = " << T_cur_from_ref_.getRotationMatrix() << std::endl
-          << "T.translation() = " << T_cur_from_ref_.getPosition();
+  // LOG(ERROR) << "5Pt RANSAC:" << std::endl
+  //         << "# Iter = " << ransac.iterations_ << std::endl
+  //         << "# Inliers = " << ransac.inliers_.size() << std::endl
+  //         << "Model = " << ransac.model_coefficients_ << std::endl
+  //         << "T.rotation_matrix() = " << T_cur_from_ref_.getRotationMatrix() << std::endl
+  //         << "T.translation() = " << T_cur_from_ref_.getPosition();
 
   const Transformation T_world_imu_cur = frames_cur->at(0)->T_world_imu();  
   const Transformation T_world_imu_ref = frames_ref->at(0)->T_world_imu();  
@@ -359,9 +352,9 @@ InitResult FivePointInit::addFrameBundle(
   const Transformation T_imu_cur_from_ref = T_world_imu_cur * T_world_imu_ref.inverse();  
   const Matrix3d R_imu_cur_from_ref = T_imu_cur_from_ref.getRotationMatrix();  
     
-  LOG(ERROR) << "IMU Relative Rotation:" << std::endl  
-              << "R_imu_cur_from_ref = " << R_imu_cur_from_ref << std::endl  
-              << "IMU relative quaternion = " << T_imu_cur_from_ref.getRotation();
+  // LOG(ERROR) << "IMU Relative Rotation:" << std::endl  
+  //             << "R_imu_cur_from_ref = " << R_imu_cur_from_ref << std::endl  
+  //             << "IMU relative quaternion = " << T_imu_cur_from_ref.getRotation();
 
   // Triangulate
   if(initialization_utils::triangulateAndInitializePoints(

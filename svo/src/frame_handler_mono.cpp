@@ -74,6 +74,7 @@ UpdateResult FrameHandlerMono::processFirstFrame()
     initializer_->setAbsoluteOrientationPrior(
           newFrame()->T_cam_imu().getRotation() * R_imu_world_);
   }
+  LOG(ERROR) << "**** 111 Frame ID = " << newFrame()->id_ << " ****";
   const auto res = initializer_->addFrameBundle(new_frames_);
 
   if(res == InitResult::kTracking)
@@ -121,7 +122,7 @@ UpdateResult FrameHandlerMono::processFirstFrame()
 
 UpdateResult FrameHandlerMono::processFrame()
 {
-  VLOG(40) << "Updating seeds in overlapping keyframes...";
+  LOG(ERROR) << "Updating seeds in overlapping keyframes...";
   // this is useful when the pipeline is with the backend,
   // where we should have more accurate pose at this moment
   depth_filter_->updateSeeds(overlap_kfs_.at(0), lastFrame());
@@ -130,16 +131,16 @@ UpdateResult FrameHandlerMono::processFrame()
   // tracking
 
   // STEP 1: Sparse Image Align
-  VLOG(40) << "===== Sparse Image Alignment =====";
+  LOG(ERROR) << "===== Sparse Image Alignment =====";
   size_t n_total_observations = 0;
   sparseImageAlignment();
 
   // STEP 2: Map Reprojection & Feature Align
-  VLOG(40) << "===== Project Map to Current Frame =====";
+  LOG(ERROR) << "===== Project Map to Current Frame =====";
   n_total_observations = projectMapInFrame();
   if(n_total_observations < options_.quality_min_fts)
   {
-    LOG(WARNING) << "Not enough feature after reprojection: "
+    LOG(ERROR) << "Not enough feature after reprojection: "
                  << n_total_observations;
     return UpdateResult::kFailure;
   }
@@ -148,11 +149,11 @@ UpdateResult FrameHandlerMono::processFrame()
   // redundant when using ceres backend
   if(bundle_adjustment_type_!=BundleAdjustmentType::kCeres)
   {
-    VLOG(40) << "===== Pose Optimization =====";
+    LOG(ERROR) << "===== Pose Optimization =====";
     n_total_observations = optimizePose();
     if(n_total_observations < options_.quality_min_fts)
     {
-      LOG(WARNING) << "Not enough feature after pose optimization."
+      LOG(ERROR) << "Not enough feature after pose optimization."
                    << n_total_observations;
       return UpdateResult::kFailure;
     }

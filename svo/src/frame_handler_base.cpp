@@ -733,10 +733,10 @@ size_t FrameHandlerBase::sparseImageAlignment()
 //------------------------------------------------------------------------------
 size_t FrameHandlerBase::projectMapInFrame()
 {
-  VLOG(40) << "Project map in frame.";
+  LOG(ERROR) << "Project map in frame.";
   if (options_.trace_statistics)
   {
-    SVO_START_TIMER("reproject");
+    LOG(ERROR) << "reproject";
   }
   // compute overlap keyframes
   for (size_t camera_idx = 0; camera_idx < cams_->numCameras(); ++camera_idx)
@@ -810,12 +810,16 @@ size_t FrameHandlerBase::projectMapInFrame()
   if (options_.trace_statistics)
   {
     SVO_STOP_TIMER("reproject");
-    SVO_LOG("repr_n_matches_local_map", cumul_stats_.n_matches);
-    SVO_LOG("repr_n_trials_local_map", cumul_stats_.n_trials);
-    SVO_LOG("repr_n_matches_global_map", cumul_stats_global_map.n_matches);
-    SVO_LOG("repr_n_trials_global_map", cumul_stats_global_map.n_trials);
+    // SVO_LOG("repr_n_matches_local_map", cumul_stats_.n_matches);
+    // SVO_LOG("repr_n_trials_local_map", cumul_stats_.n_trials);
+    // SVO_LOG("repr_n_matches_global_map", cumul_stats_global_map.n_matches);
+    // SVO_LOG("repr_n_trials_global_map", cumul_stats_global_map.n_trials);
+    LOG(ERROR) << "reproj_n_matches_local_map: " << cumul_stats_.n_matches;
+    LOG(ERROR) << "reproj_n_trials_local_map: " << cumul_stats_.n_trials;
+    LOG(ERROR) << "reproj_n_matches_global_map: " << cumul_stats_global_map.n_matches;
+    LOG(ERROR) << "reproj_n_trials_global_map: " << cumul_stats_global_map.n_trials;
   }
-  VLOG(40) << "Reprojection:" << "\t nPoints = " << cumul_stats_.n_trials << "\t\t nMatches = "
+  LOG(ERROR) << "Reprojection:" << "\t nPoints = " << cumul_stats_.n_trials << "\t\t nMatches = "
       << cumul_stats_.n_matches;
 
   size_t n_total_ftrs = cumul_stats_.n_matches +
@@ -825,7 +829,7 @@ size_t FrameHandlerBase::projectMapInFrame()
   {
     SVO_WARN_STREAM_THROTTLE(1.0, "Not enough matched features: " +
                              std::to_string(n_total_ftrs));
-    LOG(INFO) << "Not enough matched features: " << n_total_ftrs;
+    LOG(ERROR) << "Not enough matched features: " << n_total_ftrs;
   }
 
   return n_total_ftrs;
