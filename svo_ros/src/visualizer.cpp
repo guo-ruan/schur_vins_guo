@@ -292,6 +292,7 @@ void Visualizer::publishImuPose(const Transformation& T_world_imu,
   pose.pose = msg_pose->pose.pose;
   imu_path_.poses.push_back(pose);
   pub_imu_path_.publish(imu_path_);
+  std::cout << "IMU Pose: " << p[0] << " " << p[1] << " " << p[2] << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
 
   save_traj_ << std::fixed << std::setprecision(10) << 1e-9 * timestamp_nanoseconds << " " << p[0] << " " << p[1]
               << " " << p[2] << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;

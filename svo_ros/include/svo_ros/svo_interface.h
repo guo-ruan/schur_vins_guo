@@ -23,9 +23,9 @@ class CeresBackendInterface;
 class CeresBackendPublisher;
 
 enum class PipelineType {
-  kMono,
-  kStereo,
-  kArray
+  kMono,              // 单目相机
+  kStereo,            // 双目相机
+  kArray,             // 数组相机
 };
 
 /// SVO Interface

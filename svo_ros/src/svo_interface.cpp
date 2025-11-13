@@ -452,6 +452,7 @@ void SvoInterface::subscribeImu()
   sleep(3);
 }
 
+// 图像回调函数
 void SvoInterface::subscribeImage()
 {
   if(pipeline_type_ == PipelineType::kMono)
@@ -505,6 +506,7 @@ void SvoInterface::monoLoop()
   }
 }
 
+// 双目相机图像回调函数, 同步订阅左右相机图像
 void SvoInterface::stereoLoop()
 {
   typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image> ExactPolicy;
