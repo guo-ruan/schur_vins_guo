@@ -1,4 +1,4 @@
-// Modification Note: 
+// Modification Note:
 // This file may have been modified by the authors of SchurVINS.
 // (All authors of SchurVINS are with PICO department of ByteDance Corporation)
 #include <svo_ros/svo_interface.h>
@@ -30,7 +30,6 @@
 #include <vikit/timer.h>
 #include <svo_ros/ceres_backend_factory.h>
 
-
 #ifdef SVO_USE_GTSAM_BACKEND
 #include <svo_ros/backend_factory.h>
 #include <svo/backend/backend_interface.h>
@@ -45,490 +44,525 @@
 #include <svo/global_map.h>
 #endif
 
-namespace svo {
-
-SvoInterface::SvoInterface(
-    const PipelineType& pipeline_type,
-    const ros::NodeHandle& nh,
-    const ros::NodeHandle& private_nh)
-  : nh_(nh)
-  , pnh_(private_nh)
-  , pipeline_type_(pipeline_type)
-  , set_initial_attitude_from_gravity_(
-      vk::param<bool>(pnh_, "set_initial_attitude_from_gravity", true))
-  , automatic_reinitialization_(
-      vk::param<bool>(pnh_, "automatic_reinitialization", false))
+namespace svo
 {
-  switch (pipeline_type)
-  {
-    case PipelineType::kMono:
-      svo_ = factory::makeMono(pnh_);
-      break;
-    case PipelineType::kStereo:
-      svo_ = factory::makeStereo(pnh_);
-      break;
-    case PipelineType::kArray:
-      svo_ = factory::makeArray(pnh_);
-      break;
-    default:
-      LOG(FATAL) << "Unknown pipeline";
-      break;
-  }
-  ncam_ = svo_->getNCamera();
 
-  visualizer_.reset(
-        new Visualizer(svo_->options_.trace_dir, pnh_, ncam_->getNumCameras()));
-
-  if(vk::param<bool>(pnh_, "use_imu", false))
-  {
-    imu_handler_ = factory::getImuHandler(pnh_);
-    svo_->setImuHandler(imu_handler_);
-    // svo_->imu_handler_ = imu_handler_;
-  }
-
-  if(vk::param<bool>(pnh_, "use_ceres_backend", false))
-  {
-    ceres_backend_interface_ = ceres_backend_factory::makeBackend(pnh_,ncam_);
-    if(imu_handler_){
-      svo_->setBundleAdjuster(ceres_backend_interface_);
-      ceres_backend_interface_->setImu(imu_handler_);
-      ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_);
-    }
-    else
+    SvoInterface::SvoInterface(
+        const PipelineType &pipeline_type,
+        const ros::NodeHandle &nh,
+        const ros::NodeHandle &private_nh)
+        : nh_(nh), pnh_(private_nh), pipeline_type_(pipeline_type), set_initial_attitude_from_gravity_(
+                                                                        vk::param<bool>(pnh_, "set_initial_attitude_from_gravity", true)),
+          automatic_reinitialization_(
+              vk::param<bool>(pnh_, "automatic_reinitialization", false))
     {
-      SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
-    }
-  }
+        switch (pipeline_type)
+        {
+        case PipelineType::kMono:
+            svo_ = factory::makeMono(pnh_);
+            break;
+        case PipelineType::kStereo:
+            svo_ = factory::makeStereo(pnh_);
+            break;
+        case PipelineType::kArray:
+            svo_ = factory::makeArray(pnh_);
+            break;
+        default:
+            LOG(FATAL) << "Unknown pipeline";
+            break;
+        }
+        ncam_ = svo_->getNCamera();
+
+        visualizer_.reset(
+            new Visualizer(svo_->options_.trace_dir, pnh_, ncam_->getNumCameras()));
+
+        if (vk::param<bool>(pnh_, "use_imu", false))
+        {
+            imu_handler_ = factory::getImuHandler(pnh_);
+            svo_->setImuHandler(imu_handler_);
+            // svo_->imu_handler_ = imu_handler_;
+        }
+
+        if (vk::param<bool>(pnh_, "use_ceres_backend", false))
+        {
+            ceres_backend_interface_ = ceres_backend_factory::makeBackend(pnh_, ncam_);
+            if (imu_handler_)
+            {
+                svo_->setBundleAdjuster(ceres_backend_interface_);
+                ceres_backend_interface_->setImu(imu_handler_);
+                ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_);
+            }
+            else
+            {
+                SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
+            }
+        }
 #ifdef SVO_USE_GTSAM_BACKEND
-  if(vk::param<bool>(pnh_, "use_backend", false))
-  {
-    backend_interface_ = svo::backend_factory::makeBackend(pnh_);
-    ceres_backend_publisher_.reset(new CeresBackendPublisher(svo_->options_.trace_dir, pnh_));
-    svo_->setBundleAdjuster(backend_interface_);
-    backend_interface_->imu_handler_ = imu_handler_;
-  }
+        if (vk::param<bool>(pnh_, "use_backend", false))
+        {
+            backend_interface_ = svo::backend_factory::makeBackend(pnh_);
+            ceres_backend_publisher_.reset(new CeresBackendPublisher(svo_->options_.trace_dir, pnh_));
+            svo_->setBundleAdjuster(backend_interface_);
+            backend_interface_->imu_handler_ = imu_handler_;
+        }
 #endif
-  if(vk::param<bool>(pnh_, "runlc", false))
-  {
+        if (vk::param<bool>(pnh_, "runlc", false))
+        {
 #ifdef SVO_LOOP_CLOSING
-    LoopClosingPtr loop_closing_ptr =
-        factory::getLoopClosingModule(pnh_, svo_->getNCamera());
-    svo_->lc_ = std::move(loop_closing_ptr);
-    CHECK(svo_->depth_filter_->options_.extra_map_points)
-        << "The depth filter seems to be initialized without extra map points.";
+            LoopClosingPtr loop_closing_ptr =
+                factory::getLoopClosingModule(pnh_, svo_->getNCamera());
+            svo_->lc_ = std::move(loop_closing_ptr);
+            CHECK(svo_->depth_filter_->options_.extra_map_points)
+                << "The depth filter seems to be initialized without extra map points.";
 #else
-    LOG(FATAL) << "You have to enable loop closing in svo_cmake.";
+            LOG(FATAL) << "You have to enable loop closing in svo_cmake.";
 #endif
-  }
+        }
 
-  if(vk::param<bool>(pnh_, "use_global_map", false))
-  {
+        if (vk::param<bool>(pnh_, "use_global_map", false))
+        {
 #ifdef SVO_GLOBAL_MAP
-    svo_->global_map_ = factory::getGlobalMap(pnh_, svo_->getNCamera());
-    if (imu_handler_)
-    {
-      svo_->global_map_->initializeIMUParams(imu_handler_->imu_calib_,
-                                             imu_handler_->imu_init_);
-    }
+            svo_->global_map_ = factory::getGlobalMap(pnh_, svo_->getNCamera());
+            if (imu_handler_)
+            {
+                svo_->global_map_->initializeIMUParams(imu_handler_->imu_calib_,
+                                                       imu_handler_->imu_init_);
+            }
 #else
-    LOG(FATAL) << "You have to enable global map in cmake";
+            LOG(FATAL) << "You have to enable global map in cmake";
 #endif
-  }
+        }
 
-  svo_->start();
-}
-
-SvoInterface::~SvoInterface()
-{
-  if (imu_thread_)
-    imu_thread_->join();
-  if (image_thread_)
-    image_thread_->join();
-  VLOG(1) << "Destructed SVO.";
-}
-
-void SvoInterface::processImageBundle(
-    const std::vector<cv::Mat>& images,
-    const int64_t timestamp_nanoseconds)
-{
-  if (!svo_->isBackendValid())  // 检查SVO系统的后端优化器是否有效
-  {
-    if (vk::param<bool>(pnh_, "use_ceres_backend", false, true))
-    {
-      ceres_backend_interface_ =
-          ceres_backend_factory::makeBackend(pnh_, ncam_);  // 创建并初始化后端优化器
-      if (imu_handler_)
-      {
-        svo_->setBundleAdjuster(ceres_backend_interface_);  // 将Ceres后端接口设置为SVO的Bundle Adjuster
-        ceres_backend_interface_->setImu(imu_handler_);    // 将IMU处理器与后端优化器关联
-        ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_);  // 将Ceres后端接口设置为SVO的Bundle Adjuster
-      }
-      else
-      {
-        SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
-      }
+        svo_->start();
     }
-  }
-  svo_->addImageBundle(images, timestamp_nanoseconds);  // 视觉前端的入口
-}
 
-void SvoInterface::publishResults(
-    const std::vector<cv::Mat>& images,
-    const int64_t timestamp_nanoseconds)
-{
-  CHECK_NOTNULL(svo_.get());
-  CHECK_NOTNULL(visualizer_.get());
+    SvoInterface::~SvoInterface()
+    {
+        if (imu_thread_)
+            imu_thread_->join();
+        if (image_thread_)
+            image_thread_->join();
+        VLOG(1) << "Destructed SVO.";
+    }
 
-  visualizer_->img_caption_.clear();
-  if (svo_->isBackendValid())
-  {
-    std::string static_str = ceres_backend_interface_->getStationaryStatusStr();
-    visualizer_->img_caption_ = static_str;
-  }
+    void SvoInterface::processImageBundle(
+        const std::vector<cv::Mat> &images,
+        const int64_t timestamp_nanoseconds)
+    {
+        if (!svo_->isBackendValid()) // 检查SVO系统的后端优化器是否有效
+        {
+            if (vk::param<bool>(pnh_, "use_ceres_backend", false, true))
+            {
+                ceres_backend_interface_ =
+                    ceres_backend_factory::makeBackend(pnh_, ncam_); // 创建并初始化后端优化器
+                if (imu_handler_)
+                {
+                    svo_->setBundleAdjuster(ceres_backend_interface_);                       // 将Ceres后端接口设置为SVO的Bundle Adjuster
+                    ceres_backend_interface_->setImu(imu_handler_);                          // 将IMU处理器与后端优化器关联
+                    ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_); // 将Ceres后端接口设置为SVO的Bundle Adjuster
+                }
+                else
+                {
+                    SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
+                }
+            }
+        }
+        svo_->addImageBundle(images, timestamp_nanoseconds); // 视觉前端的入口
+    }
 
-  visualizer_->publishSvoInfo(svo_.get(), timestamp_nanoseconds);
-  switch (svo_->stage())
-  {
-    case Stage::kTracking: {
-      Eigen::Matrix<double, 6, 6> covariance;
-      covariance.setZero();
-      visualizer_->publishImuPose(
-            svo_->getLastFrames()->get_T_W_B(), covariance, timestamp_nanoseconds);
-      visualizer_->publishCameraPoses(svo_->getLastFrames(), timestamp_nanoseconds);
-      visualizer_->visualizeMarkers(
-            svo_->getLastFrames(), svo_->closeKeyframes(), svo_->map());
-      visualizer_->exportToDense(svo_->getLastFrames());
-      bool draw_boundary = false;
-      if (svo_->isBackendValid())
-      {
-        draw_boundary = svo_->getBundleAdjuster()->isFixedToGlobalMap();
-      }
-      visualizer_->publishImagesWithFeatures(
-            svo_->getLastFrames(), timestamp_nanoseconds,
-            draw_boundary);
-#ifdef SVO_LOOP_CLOSING
-      // detections
-      if (svo_->lc_)
-      {
-        visualizer_->publishLoopClosureInfo(
-              svo_->lc_->cur_loop_check_viz_info_,
-              std::string("loop_query"),
-              Eigen::Vector3f(0.0f, 0.0f, 1.0f), 0.5);
-        visualizer_->publishLoopClosureInfo(
-              svo_->lc_->loop_detect_viz_info_, std::string("loop_detection"),
-              Eigen::Vector3f(1.0f, 0.0f, 0.0f), 1.0);
+    void SvoInterface::publishResults(
+        const std::vector<cv::Mat> &images,
+        const int64_t timestamp_nanoseconds)
+    {
+        CHECK_NOTNULL(svo_.get());
+        CHECK_NOTNULL(visualizer_.get());
+
+        visualizer_->img_caption_.clear();
         if (svo_->isBackendValid())
         {
-          visualizer_->publishLoopClosureInfo(
-                svo_->lc_->loop_correction_viz_info_,
-                std::string("loop_correction"),
-                Eigen::Vector3f(0.0f, 1.0f, 0.0f), 3.0);
+            std::string static_str = ceres_backend_interface_->getStationaryStatusStr();
+            visualizer_->img_caption_ = static_str;
         }
-        if (svo_->getLastFrames()->at(0)->isKeyframe())
+
+        visualizer_->publishSvoInfo(svo_.get(), timestamp_nanoseconds);
+        switch (svo_->stage())
         {
-          bool pc_recalculated = visualizer_->publishPoseGraph(
-                svo_->lc_->kf_list_,
-                svo_->lc_->need_to_update_pose_graph_viz_,
-                static_cast<size_t>(svo_->lc_->options_.ignored_past_frames));
-          if(pc_recalculated)
-          {
-            svo_->lc_->need_to_update_pose_graph_viz_ = false;
-          }
-        }
-      }
+        case Stage::kTracking:
+        {
+            Eigen::Matrix<double, 6, 6> covariance;
+            covariance.setZero();
+            visualizer_->publishImuPose(
+                svo_->getLastFrames()->get_T_W_B(), covariance, timestamp_nanoseconds);
+            visualizer_->publishCameraPoses(svo_->getLastFrames(), timestamp_nanoseconds);
+            visualizer_->visualizeMarkers(
+                svo_->getLastFrames(), svo_->closeKeyframes(), svo_->map());
+            visualizer_->exportToDense(svo_->getLastFrames());
+            bool draw_boundary = false;
+            if (svo_->isBackendValid())
+            {
+                draw_boundary = svo_->getBundleAdjuster()->isFixedToGlobalMap();
+            }
+            visualizer_->publishImagesWithFeatures(
+                svo_->getLastFrames(), timestamp_nanoseconds,
+                draw_boundary);
+#ifdef SVO_LOOP_CLOSING
+            // detections
+            if (svo_->lc_)
+            {
+                visualizer_->publishLoopClosureInfo(
+                    svo_->lc_->cur_loop_check_viz_info_,
+                    std::string("loop_query"),
+                    Eigen::Vector3f(0.0f, 0.0f, 1.0f), 0.5);
+                visualizer_->publishLoopClosureInfo(
+                    svo_->lc_->loop_detect_viz_info_, std::string("loop_detection"),
+                    Eigen::Vector3f(1.0f, 0.0f, 0.0f), 1.0);
+                if (svo_->isBackendValid())
+                {
+                    visualizer_->publishLoopClosureInfo(
+                        svo_->lc_->loop_correction_viz_info_,
+                        std::string("loop_correction"),
+                        Eigen::Vector3f(0.0f, 1.0f, 0.0f), 3.0);
+                }
+                if (svo_->getLastFrames()->at(0)->isKeyframe())
+                {
+                    bool pc_recalculated = visualizer_->publishPoseGraph(
+                        svo_->lc_->kf_list_,
+                        svo_->lc_->need_to_update_pose_graph_viz_,
+                        static_cast<size_t>(svo_->lc_->options_.ignored_past_frames));
+                    if (pc_recalculated)
+                    {
+                        svo_->lc_->need_to_update_pose_graph_viz_ = false;
+                    }
+                }
+            }
 #endif
 #ifdef SVO_GLOBAL_MAP
-      if (svo_->global_map_)
-      {
-        visualizer_->visualizeGlobalMap(*(svo_->global_map_),
-                                        std::string("global_vis"),
-                                        Eigen::Vector3f(0.0f, 0.0f, 1.0f),
-                                        0.3);
-        visualizer_->visualizeFixedLandmarks(svo_->getLastFrames()->at(0));
-      }
+            if (svo_->global_map_)
+            {
+                visualizer_->visualizeGlobalMap(*(svo_->global_map_),
+                                                std::string("global_vis"),
+                                                Eigen::Vector3f(0.0f, 0.0f, 1.0f),
+                                                0.3);
+                visualizer_->visualizeFixedLandmarks(svo_->getLastFrames()->at(0));
+            }
 #endif
-      break;
-    }
-    case Stage::kInitializing: {
-      visualizer_->publishBundleFeatureTracks(
-            svo_->initializer_->frames_ref_, svo_->getLastFrames(),
-            timestamp_nanoseconds);
-      break;
-    }
-    case Stage::kPaused:
-    case Stage::kRelocalization:
-      visualizer_->publishImages(images, timestamp_nanoseconds);
-      break;
-    default:
-      LOG(FATAL) << "Unknown stage";
-      break;
-  }
+            break;
+        }
+        case Stage::kInitializing:
+        {
+            visualizer_->publishBundleFeatureTracks(
+                svo_->initializer_->frames_ref_, svo_->getLastFrames(),
+                timestamp_nanoseconds);
+            break;
+        }
+        case Stage::kPaused:
+        case Stage::kRelocalization:
+            visualizer_->publishImages(images, timestamp_nanoseconds);
+            break;
+        default:
+            LOG(FATAL) << "Unknown stage";
+            break;
+        }
 
 #ifdef SVO_USE_GTSAM_BACKEND
-  if(svo_->stage() == Stage::kTracking && backend_interface_)
-  {
-    if(svo_->getLastFrames()->isKeyframe())
-    {
-      std::lock_guard<std::mutex> estimate_lock(backend_interface_->optimizer_->estimate_mut_);
-      const gtsam::Values& state = backend_interface_->optimizer_->estimate_;
-      ceres_backend_publisher_->visualizeFrames(state);
-      if(backend_interface_->options_.add_imu_factors)
-        ceres_backend_publisher_->visualizeVelocity(state);
-      ceres_backend_publisher_->visualizePoints(state);
-    }
-  }
+        if (svo_->stage() == Stage::kTracking && backend_interface_)
+        {
+            if (svo_->getLastFrames()->isKeyframe())
+            {
+                std::lock_guard<std::mutex> estimate_lock(backend_interface_->optimizer_->estimate_mut_);
+                const gtsam::Values &state = backend_interface_->optimizer_->estimate_;
+                ceres_backend_publisher_->visualizeFrames(state);
+                if (backend_interface_->options_.add_imu_factors)
+                    ceres_backend_publisher_->visualizeVelocity(state);
+                ceres_backend_publisher_->visualizePoints(state);
+            }
+        }
 #endif
-}
-
-bool SvoInterface::setImuPrior(const int64_t timestamp_nanoseconds)
-{
-  if(svo_->getBundleAdjuster()) // 检查是否启用了后端优化器
-  {
-    if(!svo_->hasStarted()) // 检查SVO系统是否已经启动
-    {
-      if(imu_handler_->getMeasurementsCopy().size() < 10u)  // 检查IMU测量数据是否足够
-      {
-        return false;
-      }
     }
-    return true;
-  }
 
-  // imu_handler_存在且有效 && SVO系统未启动 && 需要从重力方向设置初始姿态
-  if(imu_handler_ && !svo_->hasStarted() && set_initial_attitude_from_gravity_)
-  {
-    Quaternion R_imu_world;
-    if(imu_handler_->getInitialAttitude(  // 计算初始姿态
-         timestamp_nanoseconds * common::conversions::kNanoSecondsToSeconds,
-         R_imu_world))
+    /**
+     * @brief 设置IMU先验信息
+     * @param timestamp_nanoseconds 当前处理帧的时间戳，单位为纳秒
+     * @return bool 操作是否成功
+     *
+     * 该函数负责根据系统状态和IMU数据，设置两种不同类型的旋转先验：
+     * 1. 系统初始化阶段：利用IMU加速度计数据估计重力方向，设置初始方向
+     * 2. 系统运行阶段：计算相邻帧之间的IMU增量旋转，作为视觉优化的先验约束
+     */
+    bool SvoInterface::setImuPrior(const int64_t timestamp_nanoseconds)
     {
-      VLOG(3) << "Set initial orientation from accelerometer measurements.";
-      svo_->setRotationPrior(R_imu_world);
+        // 第一部分：后端优化器处理逻辑
+        // 当系统启用了Bundle Adjustment后端优化器时的特殊处理
+        if (svo_->getBundleAdjuster()) // 检查是否启用了后端优化器
+        {
+            // 如果系统尚未启动，需要确保有足够的IMU测量数据
+            if (!svo_->hasStarted()) // 检查SVO系统是否已经启动
+            {
+                // 验证是否有足够的IMU测量数据（至少10个）
+                if (imu_handler_->getMeasurementsCopy().size() < 10u) // 检查IMU测量数据是否足够
+                {
+                    // 数据不足时返回失败
+                    return false;
+                }
+            }
+            // 后端优化模式下，只要数据充足就返回成功
+            return true;
+        }
+
+        // 第二部分：系统初始化阶段的IMU初始姿态设置
+        // imu_handler_存在且有效 && SVO系统未启动 && 需要从重力方向设置初始姿态
+        if (imu_handler_ && !svo_->hasStarted() && set_initial_attitude_from_gravity_)
+        {
+            Quaternion R_imu_world; // 用于存储IMU坐标系到世界坐标系的旋转矩阵
+
+            // 将纳秒时间戳转换为秒，并调用IMU处理器计算初始姿态
+            if (imu_handler_->getInitialAttitude(                                       // 计算初始姿态，静止时的重力方向作为Z轴方向
+                    timestamp_nanoseconds * common::conversions::kNanoSecondsToSeconds, // 纳秒转换为秒
+                    R_imu_world))
+            {
+                // 记录日志：成功从加速度计测量数据中设置初始方向
+                VLOG(3) << "Set initial orientation from accelerometer measurements.";
+                // 将计算得到的初始旋转传递给SVO系统作为先验信息
+                svo_->setRotationPrior(R_imu_world);
+            }
+            else
+            {
+                // 初始姿态计算失败，返回false
+                return false;
+            }
+        }
+        // 第三部分：系统运行阶段的增量旋转先验设置
+        // imu_handler_存在且有效 && SVO系统已经启动
+        // 这时是通过IMU数据计算相邻两帧图像之间的增量旋转，并将其作为旋转先验传递给SVO系统
+        else if (imu_handler_ && svo_->getLastFrames())
+        {
+            Quaternion R_lastimu_newimu; // 存储从上次IMU到当前IMU的增量旋转
+
+            // 计算相邻帧之间的IMU旋转增量
+            if (imu_handler_->getRelativeRotationPrior(
+                    // 起始时间：上一帧的最小时间戳（转换为秒）
+                    svo_->getLastFrames()->getMinTimestampNanoseconds() *
+                        common::conversions::kNanoSecondsToSeconds,
+                    // 结束时间：当前时间戳（转换为秒）
+                    timestamp_nanoseconds * common::conversions::kNanoSecondsToSeconds,
+                    false, // 不使用角速度的绝对值
+                    R_lastimu_newimu))
+            {
+                // 记录日志：成功从IMU设置增量旋转先验
+                VLOG(3) << "Set incremental rotation prior from IMU.";
+                // 将计算得到的增量旋转传递给SVO系统作为优化先验
+                svo_->setRotationIncrementPrior(R_lastimu_newimu);
+            }
+        }
+
+        // 默认返回成功，表示IMU先验设置流程完成（即使没有设置具体的先验值）
+        return true;
     }
-    else
+
+    void SvoInterface::monoCallback(const sensor_msgs::ImageConstPtr &msg)
     {
-      return false;
+        if (idle_)
+            return;
+
+        cv::Mat image;
+        try
+        {
+            image = cv_bridge::toCvCopy(msg)->image;
+        }
+        catch (cv_bridge::Exception &e)
+        {
+            ROS_ERROR("cv_bridge exception: %s", e.what());
+        }
+
+        std::vector<cv::Mat> images;
+        images.push_back(image.clone());
+
+        if (!setImuPrior(msg->header.stamp.toNSec()))
+        {
+            VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
+            return;
+        }
+
+        imageCallbackPreprocessing(msg->header.stamp.toNSec());
+
+        processImageBundle(images, msg->header.stamp.toNSec());
+
+        publishResults(images, msg->header.stamp.toNSec());
+
+        if (svo_->stage() == Stage::kPaused && automatic_reinitialization_)
+            svo_->start();
+
+        imageCallbackPostprocessing();
     }
-  }
-  // imu_handler_存在且有效 && SVO系统已经启动
-  // 这时是通过IMU数据计算相邻两帧图像之间的增量旋转，并将其作为旋转先验传递给SVO系统
-  else if(imu_handler_ && svo_->getLastFrames())
-  {
-    Quaternion R_lastimu_newimu;
-    if(imu_handler_->getRelativeRotationPrior(
-         svo_->getLastFrames()->getMinTimestampNanoseconds() *
-         common::conversions::kNanoSecondsToSeconds,
-         timestamp_nanoseconds * common::conversions::kNanoSecondsToSeconds,
-         false, R_lastimu_newimu))
+
+    void SvoInterface::stereoCallback(
+        const sensor_msgs::ImageConstPtr &msg0,
+        const sensor_msgs::ImageConstPtr &msg1)
     {
-      VLOG(3) << "Set incremental rotation prior from IMU.";
-      svo_->setRotationIncrementPrior(R_lastimu_newimu);
+        // 判断是否空闲
+        if (idle_)
+            return;
+
+        // 图像灰度化
+        cv::Mat img0, img1;
+        try
+        {
+            img0 = cv_bridge::toCvShare(msg0, "mono8")->image;
+            img1 = cv_bridge::toCvShare(msg1, "mono8")->image;
+        }
+        catch (cv_bridge::Exception &e)
+        {
+            ROS_ERROR("cv_bridge exception: %s", e.what());
+        }
+
+        if (!setImuPrior(msg0->header.stamp.toNSec()))
+        {
+            VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
+            return;
+        }
+
+        imageCallbackPreprocessing(msg0->header.stamp.toNSec()); // 空实现，不执行
+
+        processImageBundle({img0, img1}, msg0->header.stamp.toNSec());
+        publishResults({img0, img1}, msg0->header.stamp.toNSec());
+
+        if (svo_->stage() == Stage::kPaused && automatic_reinitialization_)
+            svo_->start();
+
+        imageCallbackPostprocessing();
     }
-  }
-  return true;
-}
 
-void SvoInterface::monoCallback(const sensor_msgs::ImageConstPtr& msg)
-{
-  if(idle_)
-    return;
+    // IMU回调函数, 处理IMU测量数据
+    void SvoInterface::imuCallback(const sensor_msgs::ImuConstPtr &msg)
+    {
+        const Eigen::Vector3d omega_imu(
+            msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+        const Eigen::Vector3d lin_acc_imu(
+            msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+        const ImuMeasurement m(msg->header.stamp.toSec(), omega_imu, lin_acc_imu);
+        if (imu_handler_)
+            imu_handler_->addImuMeasurement(m);
+        else
+            SVO_ERROR_STREAM("SvoNode has no ImuHandler");
+    }
 
-  cv::Mat image;
-  try
-  {
-    image = cv_bridge::toCvCopy(msg)->image;
-  }
-  catch (cv_bridge::Exception& e)
-  {
-    ROS_ERROR("cv_bridge exception: %s", e.what());
-  }
+    void SvoInterface::inputKeyCallback(const std_msgs::StringConstPtr &key_input)
+    {
+        std::string remote_input = key_input->data;
+        char input = remote_input.c_str()[0];
+        switch (input)
+        {
+        case 'q':
+            quit_ = true;
+            SVO_INFO_STREAM("SVO user input: QUIT");
+            ros::shutdown();
+            break;
+        case 'r':
+            svo_->reset();
+            idle_ = true;
+            SVO_INFO_STREAM("SVO user input: RESET");
+            break;
+        case 's':
+            svo_->start();
+            idle_ = false;
+            SVO_INFO_STREAM("SVO user input: START");
+            break;
+        case 'c':
+            svo_->setCompensation(true);
+            SVO_INFO_STREAM("Enabled affine compensation.");
+            break;
+        case 'C':
+            svo_->setCompensation(false);
+            SVO_INFO_STREAM("Disabled affine compensation.");
+            break;
+        default:;
+        }
+    }
 
-  std::vector<cv::Mat> images;
-  images.push_back(image.clone());
+    void SvoInterface::subscribeImu()
+    {
+        imu_thread_ = std::unique_ptr<std::thread>(
+            new std::thread(&SvoInterface::imuLoop, this));
+        sleep(3);
+    }
 
-  if(!setImuPrior(msg->header.stamp.toNSec()))
-  {
-    VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
-    return;
-  }
+    // 图像回调函数
+    void SvoInterface::subscribeImage()
+    {
+        if (pipeline_type_ == PipelineType::kMono)
+            image_thread_ = std::unique_ptr<std::thread>(
+                new std::thread(&SvoInterface::monoLoop, this));
+        else if (pipeline_type_ == PipelineType::kStereo)
+            image_thread_ = std::unique_ptr<std::thread>(
+                new std::thread(&SvoInterface::stereoLoop, this));
+    }
 
-  imageCallbackPreprocessing(msg->header.stamp.toNSec());
+    void SvoInterface::subscribeRemoteKey()
+    {
+        std::string remote_key_topic =
+            vk::param<std::string>(pnh_, "remote_key_topic", "svo/remote_key");
+        sub_remote_key_ =
+            nh_.subscribe(remote_key_topic, 5, &svo::SvoInterface::inputKeyCallback, this);
+    }
 
-  processImageBundle(images, msg->header.stamp.toNSec());
+    void SvoInterface::imuLoop()
+    {
+        SVO_INFO_STREAM("SvoNode: Started IMU loop.");
+        ros::NodeHandle nh;
+        ros::CallbackQueue queue;
+        nh.setCallbackQueue(&queue);
+        std::string imu_topic = vk::param<std::string>(pnh_, "imu_topic", "imu");
+        ros::Subscriber sub_imu =
+            nh.subscribe(imu_topic, 10000, &svo::SvoInterface::imuCallback, this);
+        while (ros::ok() && !quit_)
+        {
+            queue.callAvailable(ros::WallDuration(0.1));
+        }
+    }
 
+    void SvoInterface::monoLoop()
+    {
+        SVO_INFO_STREAM("SvoNode: Started Image loop.");
 
-  publishResults(images, msg->header.stamp.toNSec());
+        ros::NodeHandle nh;
+        ros::CallbackQueue queue;
+        nh.setCallbackQueue(&queue);
 
-  if(svo_->stage() == Stage::kPaused && automatic_reinitialization_)
-    svo_->start();
+        image_transport::ImageTransport it(nh);
+        std::string image_topic =
+            vk::param<std::string>(pnh_, "cam0_topic", "camera/image_raw");
+        image_transport::Subscriber it_sub =
+            it.subscribe(image_topic, 5, &svo::SvoInterface::monoCallback, this);
 
-  imageCallbackPostprocessing();
-}
+        while (ros::ok() && !quit_)
+        {
+            queue.callAvailable(ros::WallDuration(0.1));
+        }
+    }
 
-void SvoInterface::stereoCallback(
-    const sensor_msgs::ImageConstPtr& msg0,
-    const sensor_msgs::ImageConstPtr& msg1)
-{
-  // 判断是否空闲
-  if(idle_)
-    return;
+    // 双目相机图像回调函数, 同步订阅左右相机图像
+    void SvoInterface::stereoLoop()
+    {
+        typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image> ExactPolicy;
+        typedef message_filters::Synchronizer<ExactPolicy> ExactSync;
 
-  // 图像灰度化
-  cv::Mat img0, img1;
-  try {
-    img0 = cv_bridge::toCvShare(msg0, "mono8")->image;
-    img1 = cv_bridge::toCvShare(msg1, "mono8")->image;
-  } catch (cv_bridge::Exception& e) {
-    ROS_ERROR("cv_bridge exception: %s", e.what());
-  }
+        ros::NodeHandle nh(nh_, "image_thread");
+        ros::CallbackQueue queue;
+        nh.setCallbackQueue(&queue);
 
-  if(!setImuPrior(msg0->header.stamp.toNSec()))
-  {
-    VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
-    return;
-  }
+        // subscribe to cam msgs
+        std::string cam0_topic(vk::param<std::string>(pnh_, "cam0_topic", "/cam0/image_raw"));
+        std::string cam1_topic(vk::param<std::string>(pnh_, "cam1_topic", "/cam1/image_raw"));
+        image_transport::ImageTransport it(nh);
+        image_transport::SubscriberFilter sub0(it, cam0_topic, 1000, std::string("raw"));
+        image_transport::SubscriberFilter sub1(it, cam1_topic, 1000, std::string("raw"));
+        ExactSync sync_sub(ExactPolicy(1000), sub0, sub1);
+        sync_sub.registerCallback(boost::bind(&svo::SvoInterface::stereoCallback, this, _1, _2));
 
-  imageCallbackPreprocessing(msg0->header.stamp.toNSec());  // 空实现，不执行
-
-  processImageBundle({img0, img1}, msg0->header.stamp.toNSec());
-  publishResults({img0, img1}, msg0->header.stamp.toNSec());
-
-  if(svo_->stage() == Stage::kPaused && automatic_reinitialization_)
-    svo_->start();
-
-  imageCallbackPostprocessing();
-}
-
-void SvoInterface::imuCallback(const sensor_msgs::ImuConstPtr& msg)
-{
-  const Eigen::Vector3d omega_imu(
-        msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
-  const Eigen::Vector3d lin_acc_imu(
-        msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
-  const ImuMeasurement m(msg->header.stamp.toSec(), omega_imu, lin_acc_imu);
-  if(imu_handler_)
-    imu_handler_->addImuMeasurement(m);
-  else
-    SVO_ERROR_STREAM("SvoNode has no ImuHandler");
-}
-
-void SvoInterface::inputKeyCallback(const std_msgs::StringConstPtr& key_input)
-{
-  std::string remote_input = key_input->data;
-  char input = remote_input.c_str()[0];
-  switch(input)
-  {
-    case 'q':
-      quit_ = true;
-      SVO_INFO_STREAM("SVO user input: QUIT");
-      ros::shutdown();
-      break;
-    case 'r':
-      svo_->reset();
-      idle_ = true;
-      SVO_INFO_STREAM("SVO user input: RESET");
-      break;
-    case 's':
-      svo_->start();
-      idle_ = false;
-      SVO_INFO_STREAM("SVO user input: START");
-      break;
-     case 'c':
-      svo_->setCompensation(true);
-      SVO_INFO_STREAM("Enabled affine compensation.");
-      break;
-     case 'C':
-      svo_->setCompensation(false);
-      SVO_INFO_STREAM("Disabled affine compensation.");
-      break;
-    default: ;
-  }
-}
-
-void SvoInterface::subscribeImu()
-{
-  imu_thread_ = std::unique_ptr<std::thread>(
-        new std::thread(&SvoInterface::imuLoop, this));
-  sleep(3);
-}
-
-// 图像回调函数
-void SvoInterface::subscribeImage()
-{
-  if(pipeline_type_ == PipelineType::kMono)
-    image_thread_ = std::unique_ptr<std::thread>(
-          new std::thread(&SvoInterface::monoLoop, this));
-  else if(pipeline_type_ == PipelineType::kStereo)
-    image_thread_ = std::unique_ptr<std::thread>(
-        new std::thread(&SvoInterface::stereoLoop, this));
-}
-
-void SvoInterface::subscribeRemoteKey()
-{
-  std::string remote_key_topic =
-      vk::param<std::string>(pnh_, "remote_key_topic", "svo/remote_key");
-  sub_remote_key_ =
-      nh_.subscribe(remote_key_topic, 5, &svo::SvoInterface::inputKeyCallback, this);
-}
-
-void SvoInterface::imuLoop()
-{
-  SVO_INFO_STREAM("SvoNode: Started IMU loop.");
-  ros::NodeHandle nh;
-  ros::CallbackQueue queue;
-  nh.setCallbackQueue(&queue);
-  std::string imu_topic = vk::param<std::string>(pnh_, "imu_topic", "imu");
-  ros::Subscriber sub_imu =
-      nh.subscribe(imu_topic, 10000, &svo::SvoInterface::imuCallback, this);
-  while(ros::ok() && !quit_)
-  {
-    queue.callAvailable(ros::WallDuration(0.1));
-  }
-}
-
-void SvoInterface::monoLoop()
-{
-  SVO_INFO_STREAM("SvoNode: Started Image loop.");
-
-  ros::NodeHandle nh;
-  ros::CallbackQueue queue;
-  nh.setCallbackQueue(&queue);
-
-  image_transport::ImageTransport it(nh);
-  std::string image_topic =
-      vk::param<std::string>(pnh_, "cam0_topic", "camera/image_raw");
-  image_transport::Subscriber it_sub =
-      it.subscribe(image_topic, 5, &svo::SvoInterface::monoCallback, this);
-
-  while(ros::ok() && !quit_)
-  {
-    queue.callAvailable(ros::WallDuration(0.1));
-  }
-}
-
-// 双目相机图像回调函数, 同步订阅左右相机图像
-void SvoInterface::stereoLoop()
-{
-  typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image> ExactPolicy;
-  typedef message_filters::Synchronizer<ExactPolicy> ExactSync;
-
-  ros::NodeHandle nh(nh_, "image_thread");
-  ros::CallbackQueue queue;
-  nh.setCallbackQueue(&queue);
-
-  // subscribe to cam msgs
-  std::string cam0_topic(vk::param<std::string>(pnh_, "cam0_topic", "/cam0/image_raw"));
-  std::string cam1_topic(vk::param<std::string>(pnh_, "cam1_topic", "/cam1/image_raw"));
-  image_transport::ImageTransport it(nh);
-  image_transport::SubscriberFilter sub0(it, cam0_topic, 1000, std::string("raw"));
-  image_transport::SubscriberFilter sub1(it, cam1_topic, 1000, std::string("raw"));
-  ExactSync sync_sub(ExactPolicy(1000), sub0, sub1);
-  sync_sub.registerCallback(boost::bind(&svo::SvoInterface::stereoCallback, this, _1, _2));
-
-  while(ros::ok() && !quit_)
-  {
-    queue.callAvailable(ros::WallDuration(0.1));
-  }
-}
+        while (ros::ok() && !quit_)
+        {
+            queue.callAvailable(ros::WallDuration(0.1));
+        }
+    }
 
 } // namespace svo
