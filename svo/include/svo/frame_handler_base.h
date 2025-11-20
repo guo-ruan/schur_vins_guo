@@ -219,11 +219,12 @@ struct BaseOptions
 };
 
 enum class Stage {
-  kPaused,           ///< Stage at the beginning and after reset
-  kInitializing,     ///< Stage until the first frame with enough features is found
-  kTracking,         ///< Stage when SVO is running and everything is well
-  kRelocalization    ///< Stage when SVO looses tracking and it tries to relocalize
+  kPaused,           ///< 系统初始状态和重置后的阶段
+  kInitializing,     ///< 系统初始化阶段，直到找到第一个包含足够特征的帧
+  kTracking,         ///< 系统正常运行阶段，一切工作正常
+  kRelocalization    ///< 当系统失去跟踪并尝试重新定位的阶段
 };
+
 extern const std::unordered_map<svo::Stage, std::string, EnumClassHash>
 kStageName;
 
@@ -395,11 +396,14 @@ public:
   /// Camera model, can be ATAN, Pinhole or Ocam (see vikit)
   CameraBundle::Ptr cams_;
 
-  /// Current frame-bundle that is being processed
+  /// 当前正在处理的帧包，包含多相机系统中所有相机的当前观测帧
+  /// 这是系统前端处理的核心数据结构，存储最新输入的视觉观测数据
   FrameBundlePtr new_frames_;
 
-  /// Last frame-bundle that was processed. Can be nullptr.
+  /// 上一个已处理完成的帧包，可以为nullptr（系统初始化时）
+  /// 用于与当前帧包进行特征匹配、运动估计和位姿跟踪
   FrameBundlePtr last_frames_;
+
 
   /// Custom callback to check if new keyframe is required
   NewKeyFrameCriteria need_new_kf_;
@@ -431,20 +435,20 @@ public:
   /// @}
 
 protected:
-  Stage stage_;                 //!< Current stage of the algorithm.
-  bool set_reset_;              //!< Flag that the user can set. Will reset the system before the next iteration.
-  bool set_start_;              //!< Flag the user can set to start the system when the next image is received.
-  MapPtr map_;                  //!< Map of keyframes created by the slam system.
-  vk::Timer timer_;             //!< Stopwatch to measure time to process frame.
-  vk::RingBuffer<double> acc_frame_timings_;    //!< Total processing time of the last 10 frames, used to give some user feedback on the performance.
-  vk::RingBuffer<size_t> acc_num_obs_;          //!< Number of observed features of the last 10 frames, used to give some user feedback on the tracking performance.
-  size_t num_obs_last_;                         //!< Number of observations in the previous frame.
-  TrackingQuality tracking_quality_;            //!< An estimate of the tracking quality based on the number of tracked features.
-  UpdateResult update_res_;                     //!< Update result of last frame bundle
-  size_t frame_counter_ = 0; //!< Number of frames processed since started
-  double depth_median_;                 //!< Median depth at last frame
-  double depth_min_;                    //!< Min depth at last frame
-  double depth_max_;
+    Stage stage_;                 //!< 算法当前所处的阶段
+    bool set_reset_;              //!< 用户可设置的标志，将在下一次迭代前重置系统
+    bool set_start_;              //!< 用户可设置的标志，当下一帧图像接收时启动系统
+    MapPtr map_;                  //!< SLAM系统创建的关键帧地图
+    vk::Timer timer_;             //!< 用于测量帧处理时间的计时器
+    vk::RingBuffer<double> acc_frame_timings_;    //!< 最近10帧的总处理时间，用于向用户提供性能反馈
+    vk::RingBuffer<size_t> acc_num_obs_;          //!< 最近10帧的观测特征数量，用于向用户提供跟踪性能反馈
+    size_t num_obs_last_;                         //!< 上一帧中的观测特征数量
+    TrackingQuality tracking_quality_;            //!< 基于跟踪特征数量的跟踪质量估计
+    UpdateResult update_res_;                     //!< 最后一帧包的更新结果
+    size_t frame_counter_ = 0; //!< 自启动以来处理的帧数
+    double depth_median_;                 //!< 最后一帧的深度中值
+    double depth_min_;                    //!< 最后一帧的最小深度
+    double depth_max_;                    //!< 最后一帧的最大深度
 
   std::vector<std::vector<FramePtr>> overlap_kfs_;
 

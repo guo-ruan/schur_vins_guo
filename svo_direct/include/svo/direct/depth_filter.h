@@ -32,9 +32,22 @@ struct DepthFilterOptions
   /// if you want very precise 3d points, set it higher.
   double seed_convergence_sigma2_thresh = 200.0;
 
-  /// Threshold for map point seeds convergence. Should be higher to make sure
-  /// we have an accurate map (for loop closing).
-  double mappoint_convergence_sigma2_thresh = 500.0;
+ /**
+ * @brief 地图点种子的深度收敛阈值（方差阈值）
+ * 
+ * 该参数用于判断地图点种子的深度估计是否足够收敛，以确保地图点的高精度。
+ * 这个阈值应该设置得较高，以保证生成的地图点具有足够的精确性，这对于闭环检测
+ * 和全局一致性优化尤为重要。
+ * 
+ * 在概率深度滤波器中，当种子点的深度估计方差低于此阈值时，表明深度估计已足够稳定，
+ * 可以将其提升为正式的地图点。较高的阈值意味着需要更多的观测数据才能确认深度，
+ * 从而提高地图点的精度。
+ * 
+ * 默认值500.0是在权衡精度和收敛速度后的经验值。在高精度要求的场景中，
+ * 可以考虑进一步提高此阈值，但可能会延迟地图构建速度。
+ */
+double mappoint_convergence_sigma2_thresh = 500.0;
+
 
   /// Use inverse-depth parametrization for seeds.
   /// Default is true. Set to false if you are using the depth-filter to

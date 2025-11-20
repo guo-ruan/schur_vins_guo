@@ -262,6 +262,7 @@ namespace svo
 	//------------------------------------------------------------------------------
 	bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr &frame_bundle)
 	{
+        LOG(WARNING) << "New Frame Bundle received =  " << frame_bundle->getBundleId();
 		VLOG(40) << "New Frame Bundle received: " << frame_bundle->getBundleId();
 		CHECK_EQ(frame_bundle->size(), cams_->numCameras()); // 检查FrameBundle中的Frame数量和参数文件中相机数量一致
 
@@ -377,6 +378,7 @@ namespace svo
 
 		// fill in frame bundle imu measurements
 #ifdef USE_SCHUR_VINS
+        LOG(WARNING) << "Schur VINS is enabled !!!!!!!!!!!!!!!!!!!!!!!!!!.";
 		if (schur_vins_ && imu_handler_)
 		{
 			ImuMeasurements imu_measurements;
@@ -387,7 +389,8 @@ namespace svo
 			{
 				const int num_imu = imu_measurements.size();
 				frame_bundle->imu_datas_ = imu_measurements;
-				/// 反转IMU数据顺序，不清楚为什么这么做 TODO Guo
+				/// 反转IMU数据顺序，这是因为在imu回调时，将最新的数据放在了vector的前端
+                // 原始队列：新 - 旧，反转后：旧 - 新
 				std::reverse(frame_bundle->imu_datas_.begin(), frame_bundle->imu_datas_.end());
 				frame_bundle->imu_ready_ = true;
 

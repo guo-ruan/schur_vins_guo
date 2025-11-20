@@ -107,10 +107,20 @@ inline FloatType getSigma2FromDepthSigma(FloatType depth, FloatType depth_sigma)
 // -----------------------------------------------------------------------------
 // Inverse Depth Parametrization
 
+/**
+ * @brief 从种子状态中获取深度估计值
+ * @param mu_sigma2_a_b 种子状态向量，包含逆深度的均值、方差和其他参数
+ * @return 特征点的深度估计值（单位：米）
+ * @note SVO系统中，深度滤波器内部使用逆深度(inverse depth)表示，
+ *       因此需要通过取倒数运算转换为实际深度值
+ */
 inline FloatType getDepth(const Eigen::Ref<const SeedState>& mu_sigma2_a_b)
 {
+  // 返回逆深度的倒数，转换为实际深度值
+  // mu_sigma2_a_b(0)存储的是逆深度的均值(1/d)
   return 1.0 / mu_sigma2_a_b(0);
 }
+
 
 inline FloatType getInvDepth(const Eigen::Ref<const SeedState>& mu_sigma2_a_b)
 {

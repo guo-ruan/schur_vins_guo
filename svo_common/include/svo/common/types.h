@@ -91,20 +91,24 @@ struct MatchedPointsInfo
 
 //------------------------------------------------------------------------------
 // Feature Type.
+/**
+ * @brief 特征类型枚举，用于标识SVO系统中不同状态和类型的特征点
+ */
 enum class FeatureType : uint8_t
 {
-  kEdgeletSeed = 0,
-  kCornerSeed = 1,
-  kMapPointSeed = 2,
-  kEdgeletSeedConverged = 3,
-  kCornerSeedConverged = 4,
-  kMapPointSeedConverged = 5,
-  kEdgelet = 6,
-  kCorner = 7,
-  kMapPoint = 8,
-  kFixedLandmark = 9,
-  kOutlier = 10
+  kEdgeletSeed = 0,           ///< 边缘特征种子点，深度尚未收敛的边缘特征
+  kCornerSeed = 1,            ///< 角点特征种子点，深度尚未收敛的角点特征
+  kMapPointSeed = 2,          ///< 地图点种子点，与已有地图点关联的深度估计种子
+  kEdgeletSeedConverged = 3,  ///< 收敛的边缘特征种子点，深度估计已收敛但未成为正式地图点
+  kCornerSeedConverged = 4,   ///< 收敛的角点特征种子点，深度估计已收敛但未成为正式地图点
+  kMapPointSeedConverged = 5, ///< 收敛的地图点种子点，深度估计已收敛且与地图点关联
+  kEdgelet = 6,               ///< 边缘特征点，已成为正式特征点但未关联地图点
+  kCorner = 7,                ///< 角点特征点，已成为正式特征点但未关联地图点
+  kMapPoint = 8,              ///< 地图点特征，已成功三角化并加入地图的特征点
+  kFixedLandmark = 9,         ///< 固定地标点，通常是已知的或高精度的地图点
+  kOutlier = 10               ///< 外点，被检测为异常值的特征点，不参与跟踪和优化
 };
+
 
 using FeatureTypes = std::vector<FeatureType>;
 

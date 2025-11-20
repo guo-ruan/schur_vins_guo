@@ -197,44 +197,67 @@ void DepthFilter::updateSeedsLoop()
   }
 }
 
+/**
+ * @brief 更新种子点的深度估计
+ * 
+ * 该函数使用当前帧信息更新参考帧中所有种子点的深度估计，支持单线程和多线程两种处理模式
+ * 
+ * @param ref_frames_with_seeds 包含待更新种子点的参考帧列表
+ * @param cur_frame 当前帧，用于提供更新种子点所需的新视角信息
+ * @return 成功更新的种子点数量
+ */
 size_t DepthFilter::updateSeeds(
     const std::vector<FramePtr>& ref_frames_with_seeds,
     const FramePtr& cur_frame)
 {
+  // 记录成功更新的种子点数量
   size_t n_success = 0;
+  
+  // 单线程模式处理
   if(thread_ == nullptr)
   {
+    // 遍历所有参考帧
     for(const FramePtr& ref_frame : ref_frames_with_seeds)
     {
+      // 遍历参考帧中的所有特征点
       for(size_t i = 0; i < ref_frame->num_features_; ++i)
       {
         const FeatureType& type = ref_frame->type_vec_[i];
+        // 仅处理种子点类型的特征
         if(isSeed(type))
         {
+          // 默认使用种子点收敛阈值
           double cur_thresh = options_.seed_convergence_sigma2_thresh;
-          // we use a different threshold for map points to get better accuracy
+          
+          // 对于地图点种子点，使用更高精度的收敛阈值
           if (type == FeatureType::kMapPointSeed ||
               type == FeatureType::kMapPointSeedConverged)
           {
             cur_thresh = options_.mappoint_convergence_sigma2_thresh;
           }
-          // We get higher precision (10x in the synthetic blender dataset)
-          // when we keep updating seeds even though they are converged until
-          // the frame handler selects a new keyframe.
+          
+          // 更新种子点深度估计
+          // 参数true表示即使种子点已收敛也继续更新，以获得更高精度
           if(depth_filter_utils::updateSeed(
                *cur_frame, *ref_frame, i, *matcher_, cur_thresh, true, false))
           {
-            ++n_success;
+            ++n_success;  // 成功更新计数
           }
         }
       }
     }
+    
+    // 调试信息输出
     SVO_DEBUG_STREAM("DepthFilter: " << cur_frame->cam()->getLabel() << " updated "
                      << n_success << " Seeds successfully.");
   }
+  // 多线程模式处理
   else
   {
+    // 加锁访问任务队列
     ulock_t lock(jobs_mut_);
+    
+    // 遍历所有参考帧和特征点，将种子点处理任务加入队列
     for(const FramePtr& ref_frame : ref_frames_with_seeds)
     {
       for(size_t i = 0; i < ref_frame->num_features_; ++i)
@@ -245,10 +268,15 @@ size_t DepthFilter::updateSeeds(
         }
       }
     }
+    
+    // 通知所有工作线程有新任务
     jobs_condvar_.notify_all();
   }
+  
+  // 返回成功更新的种子点数量
   return n_success;
 }
+
 
 namespace depth_filter_utils {
 
@@ -364,69 +392,92 @@ void initializeSeeds(
                    " Initialized "<< n_new <<" new seeds");
 }
 
+/**
+ * @brief 更新特征点种子的深度估计
+ * 
+ * 使用当前帧的信息更新参考帧中特定索引的特征点种子的深度估计值
+ * 该函数是深度滤波器的核心方法，通过直接匹配技术在极线上查找对应点
+ * 并利用新的深度测量值更新概率深度分布
+ * 
+ * @param cur_frame 当前帧，用于提供新的观测信息
+ * @param ref_frame 参考帧，包含需要更新的种子点
+ * @param seed_index 需要更新的种子点在参考帧中的索引
+ * @param matcher 特征匹配器，用于在当前帧中寻找对应特征
+ * @param sigma2_convergence_threshold 种子收敛的方差阈值
+ * @param check_visibility 是否检查特征在当前帧中的可见性
+ * @param check_convergence 是否检查种子是否已经收敛
+ * @param use_vogiatzis_update 是否使用Vogiatzis更新方法（更鲁棒但计算量更大）
+ * @return bool 更新是否成功
+ */
 bool updateSeed(
-    const Frame& cur_frame,
-    Frame& ref_frame,
-    const size_t& seed_index,
-    Matcher& matcher,
-    const FloatType sigma2_convergence_threshold,
-    const bool check_visibility,
-    const bool check_convergence,
-    const bool use_vogiatzis_update)
+    const Frame& cur_frame,          // 当前帧
+    Frame& ref_frame,                // 参考帧（会被修改）
+    const size_t& seed_index,        // 要更新的种子点索引
+    Matcher& matcher,                // 特征匹配器
+    const FloatType sigma2_convergence_threshold, // 收敛阈值
+    const bool check_visibility,     // 是否检查可见性
+    const bool check_convergence,    // 是否检查收敛状态
+    const bool use_vogiatzis_update) // 是否使用Vogiatzis更新方法
 {
+  // 避免使用相同帧进行更新
   if(cur_frame.id() == ref_frame.id())
   {
     SVO_WARN_STREAM_THROTTLE(1.0, "update seed with ref frame");
     return false;
   }
 
-  constexpr double px_noise = 1.0;
-  static double px_error_angle = cur_frame.getAngleError(px_noise);
+  // 定义像素噪声和计算角度误差
+  constexpr double px_noise = 1.0;  // 像素噪声标准偏差
+  static double px_error_angle = cur_frame.getAngleError(px_noise); // 像素误差对应的角度误差
 
-  // check if seed is diverged
+  // 检查种子是否已经被标记为异常值
   const FeatureType type = ref_frame.type_vec_[seed_index];
   if(type == FeatureType::kOutlier)
   {
-    return false;
+    return false;  // 异常值不进行更新
   }
 
-  // check if already converged
+  // 检查种子是否已经收敛
   if((type == FeatureType::kCornerSeedConverged ||
       type == FeatureType::kEdgeletSeedConverged ||
       type == FeatureType::kMapPointSeedConverged) && check_convergence)
   {
-    return false;
+    return false;  // 已收敛且要求检查收敛状态时，不进行更新
   }
 
-  // Create wrappers
+  // 创建特征包装器和状态引用
   FeatureWrapper ref_ftr = ref_frame.getFeatureWrapper(seed_index);
   Eigen::Ref<SeedState> state = ref_frame.invmu_sigma2_a_b_vec_.col(seed_index);
 
-  // check if point is visible in the current image
-  Transformation T_cur_ref = cur_frame.T_f_w_ * ref_frame.T_f_w_.inverse();
+  // 检查点在当前图像中的可见性
+  Transformation T_cur_ref = cur_frame.T_f_w_ * ref_frame.T_f_w_.inverse(); // 计算当前帧到参考帧的变换
   if(check_visibility)
   {
+    // 深度估计值 = 相机光心到地图点的距离
+    // 根据当前深度估计将特征点投影到当前帧 单位方向向量 * 深度估计值 = 3D点坐标
     const Eigen::Vector3d xyz_f(T_cur_ref*(seed::getDepth(state) * ref_ftr.f) );
     Eigen::Vector2d px;
+    // 检查投影后的点是否可见
     if(!cur_frame.cam()->project3(xyz_f, &px).isKeypointVisible())
       return false;
 
-    // check margin
+    // 检查点是否远离图像边界（有一定边距）
     const Eigen::Vector2i pxi = px.cast<int>();
-    const int boundary = 9;
+    const int boundary = 9;  // 边界检查的边距像素数
 
     if(!cur_frame.cam()->isKeypointVisibleWithMargin(pxi, boundary))
       return false;
   }
 
-  // set matcher options
+  // 根据特征类型设置匹配器选项
+  // 边缘特征需要启用一维对齐
   if(ref_ftr.type == FeatureType::kEdgeletSeed
      || ref_ftr.type == FeatureType::kEdgeletSeedConverged)
-    matcher.options_.align_1d = true;
+    matcher.options_.align_1d = true;  // 边缘特征使用一维对齐
   else
-    matcher.options_.align_1d = false;
+    matcher.options_.align_1d = false; // 角点特征使用二维对齐
 
-  // sanity checks
+  // 数值有效性检查
   if(std::isnan(seed::mu(state)))
     SVO_ERROR_STREAM("seed is nan!");
 
@@ -435,15 +486,19 @@ bool updateSeed(
                      ", sq" << std::sqrt(seed::sigma2(state)) <<
                      ", check-convergence = " << check_convergence;
 
-  // search epipolar line, find match, and triangulate to find new depth z
-  double depth;
-  Matcher::MatchResult res =
-      matcher.findEpipolarMatchDirect(
-        ref_frame, cur_frame, T_cur_ref, ref_ftr, seed::getInvDepth(state),
-        seed::getInvMinDepth(state), seed::getInvMaxDepth(state), depth);
+  // 在极线上搜索匹配点并三角化计算新深度
+  double depth;  // 存储新估计的深度值
+  Matcher::MatchResult res = matcher.findEpipolarMatchDirect(
+      ref_frame, cur_frame, T_cur_ref, ref_ftr, 
+      seed::getInvDepth(state),           // 当前逆深度估计
+      seed::getInvMinDepth(state),        // 逆深度最小值
+      seed::getInvMaxDepth(state),        // 逆深度最大值
+      depth);                             // 输出新的深度值
 
+  // 匹配失败处理
   if(res != Matcher::MatchResult::kSuccess)
   {
+    // 如果不是被主动拒绝（如光照变化过大等），则增加异常值概率
     if(!matcher.reject_)
     {
       seed::increaseOutlierProbability(state);
@@ -452,42 +507,45 @@ bool updateSeed(
     {
       std::cout << "filter fail = " << Matcher::getResultString(res) << std::endl;
     }
-    return false;
+    return false;  // 更新失败
   }
 
-  // compute tau
+  // 计算深度估计的不确定性tau
   const FloatType depth_sigma = computeTau(T_cur_ref.inverse(), ref_ftr.f, depth, px_error_angle);
 
-  // update the estimate
+  // 根据选择的方法更新深度估计
   if(use_vogiatzis_update)
   {
+    // 使用Vogiatzis方法更新（更鲁棒但计算更复杂）
     if(!updateFilterVogiatzis(
-         seed::getMeanFromDepth(depth),
-         seed::getSigma2FromDepthSigma(depth, depth_sigma),
-         ref_frame.seed_mu_range_,
+         seed::getMeanFromDepth(depth),                     // 从深度计算均值
+         seed::getSigma2FromDepthSigma(depth, depth_sigma),  // 计算方差
+         ref_frame.seed_mu_range_,                          // 均值范围
          state))
     {
-      ref_ftr.type = FeatureType::kOutlier;
+      ref_ftr.type = FeatureType::kOutlier;  // 更新失败，标记为异常值
       return false;
     }
   }
   else
   {
+    // 使用简单的高斯更新方法
     if(!updateFilterGaussian(
          seed::getMeanFromDepth(depth),
          seed::getSigma2FromDepthSigma(depth, depth_sigma),
          state))
     {
-      ref_ftr.type = FeatureType::kOutlier;
+      ref_ftr.type = FeatureType::kOutlier;  // 更新失败，标记为异常值
       return false;
     }
   }
 
-  // check if converged
+  // 检查深度估计是否收敛
   if(seed::isConverged(state,
                        ref_frame.seed_mu_range_,
                        sigma2_convergence_threshold))
   {
+    // 根据特征类型更新状态为收敛状态
     if(ref_ftr.type == FeatureType::kCornerSeed)
       ref_ftr.type = FeatureType::kCornerSeedConverged;
     else if(ref_ftr.type == FeatureType::kEdgeletSeed)
@@ -495,8 +553,9 @@ bool updateSeed(
     else if(ref_ftr.type == FeatureType::kMapPointSeed)
       ref_ftr.type = FeatureType::kMapPointSeedConverged;
   }
-  return true;
+  return true;  // 更新成功
 }
+
 
 bool updateFilterVogiatzis(
     const FloatType z, // Measurement

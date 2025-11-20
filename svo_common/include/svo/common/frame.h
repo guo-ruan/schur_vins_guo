@@ -64,18 +64,19 @@ public:
   // Features
   // All vectors must have the same length/cols at all time!
   // {
-  size_t num_features_ = 0u;    ///< the vectors below are initialized to the maximum number of feature-tracks
-  Keypoints px_vec_;            ///< Pixel Coordinates
-  Bearings f_vec_;              ///< Bearing Vector
-  Scores score_vec_;            ///< Keypoint detection scores
-  Levels  level_vec_;           ///< Level of the feature
-  Gradients grad_vec_;          ///< Gradient direction of edgelet normal
-  FeatureTypes type_vec_;       ///< Is the feature a corner or an edgelet?
-  Landmarks landmark_vec_;      ///< Reference to 3D point. Can contain nullpointers!
-  TrackIds track_id_vec_;       ///< ID of every observed 3d point. -1 if no point assigned.
-  SeedRefs seed_ref_vec_;       ///< Only for seeds during reprojection
-  SeedStates invmu_sigma2_a_b_vec_; ///< Vector containing all necessary information for seed update.
-  std::vector<bool> in_ba_graph_vec_;
+  size_t num_features_ = 0u;    ///< 当前帧中的特征点数量，下方的向量都初始化为最大特征跟踪数量
+  Keypoints px_vec_;            ///< 像素坐标，特征点在图像中的二维坐标位置
+  Bearings f_vec_;              ///< 归一化的单位方向向量，表示从相机中心指向特征点的光线方向
+  Scores score_vec_;            ///< 特征点检测分数，用于衡量特征点的质量
+  Levels level_vec_;            ///< 特征点所在的图像金字塔层级
+  Gradients grad_vec_;          ///< 边缘特征的梯度方向，用于边缘特征的几何特性表示
+  FeatureTypes type_vec_;       ///< 特征类型标识，表明特征是角点(corner)还是边缘点(edgelet)
+  Landmarks landmark_vec_;      ///< 对应的3D地标点引用，可以包含空指针！
+  TrackIds track_id_vec_;       ///< 每个被观测的3D点的ID，如果没有分配点则为-1
+  SeedRefs seed_ref_vec_;       ///< 仅用于重投影过程中的种子点引用
+  SeedStates invmu_sigma2_a_b_vec_; ///< 包含种子点更新所需的所有必要信息的向量，包括逆深度均值、方差等参数
+
+ std::vector<bool> in_ba_graph_vec_;
   // }
 
   FloatType seed_mu_range_;
@@ -459,7 +460,14 @@ public:
     return bundle_id_;
   }
 
-  /// Get timestamp of camera rig.
+/**
+ * @brief 获取图像束中最早的时间戳（纳秒级）
+ * @return 时间戳值，单位为纳秒
+ * 
+ * 该内联函数用于获取FrameBundle对象中包含的所有图像帧的时间戳中最早的一个。
+ * 在SVO系统中，通常一个Bundle中的所有图像帧共享同一个时间戳，
+ * 因此返回第一个帧的时间戳作为整个Bundle的时间戳。
+ */
   inline int64_t getMinTimestampNanoseconds() const {
     CHECK(!frames_.empty());
     return frames_[0]->getTimestampNSec();

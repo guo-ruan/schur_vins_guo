@@ -385,44 +385,81 @@ void createImgPyramid(const cv::Mat& img_level_0, int n_levels, ImgPyr& pyr)
   }
 }
 
+/**
+ * @brief 计算场景深度统计信息
+ * @param frame 输入的帧指针
+ * @param depth_median 输出参数，场景深度中值
+ * @param depth_min 输出参数，场景最小深度
+ * @param depth_max 输出参数，场景最大深度
+ * @return 是否成功计算深度统计信息
+ */
 bool getSceneDepth(const FramePtr& frame, double& depth_median, double& depth_min, double& depth_max)
 {
+  // 初始化深度值向量，用于存储所有有效特征点的深度
   std::vector<double> depth_vec;
+  // 预分配内存以提高效率，避免频繁重新分配
   depth_vec.reserve(frame->num_features_);
+  
+  // 初始化最小深度为双精度浮点数的最大值
   depth_min = std::numeric_limits<double>::max();
+  // 初始化最大深度为0
   depth_max = 0;
+  
+  // 临时变量，用于存储当前计算的深度
   double depth = 0;
+  
+  // 获取相机在世界坐标系中的位置，作为参考点
   const Position ref_pos = frame->pos();
+  
+  // 遍历帧中的所有特征点
   for(size_t i = 0; i < frame->num_features_; ++i)
   {
+    // 第一种情况：如果特征点已经关联到地图点（landmark）
     if(frame->landmark_vec_[i])
     {
+      // 计算深度：将地图点从世界坐标系转换到相机坐标系，然后取向量的范数
       depth = (frame->T_cam_world()*frame->landmark_vec_[i]->pos_).norm();
     }
+    // 第二种情况：如果特征点是种子点（尚未完全三角化为地图点）
     else if(frame->seed_ref_vec_[i].keyframe)
     {
+      // 获取种子点的引用信息
       const SeedRef& seed_ref = frame->seed_ref_vec_[i];
-      const Position pos = seed_ref.keyframe->T_world_cam() *
+      // 计算种子点在世界坐标系中的位置：
+      // 1. 从参考关键帧获取种子点在该关键帧坐标系中的位置
+      // 2. 通过关键帧的位姿将其转换到世界坐标系
+      const Position pos = seed_ref.keyframe->T_world_cam() * 
           seed_ref.keyframe->getSeedPosInFrame(seed_ref.seed_id);
+      // 计算深度：种子点与当前相机位置之间的距离
       depth = (pos - ref_pos).norm();
     }
+    // 第三种情况：特征点既不是地图点也不是种子点，跳过
     else
     {
       continue;
     }
 
+    // 存储计算的深度值
     depth_vec.push_back(depth);
+    // 更新最小深度
     depth_min = std::min(depth, depth_min);
+    // 更新最大深度
     depth_max = std::max(depth, depth_max);
   }
+  
+  // 检查是否有有效深度值
   if(depth_vec.empty())
   {
+    // 没有有效深度值时输出警告信息
     SVO_WARN_STREAM("Cannot set scene depth. Frame has no point-observations!");
     return false;
   }
+  
+  // 计算并返回深度中值
   depth_median = vk::getMedian(depth_vec);
   return true;
 }
+
 
 void computeNormalizedBearingVectors(
     const Keypoints& px_vec,
