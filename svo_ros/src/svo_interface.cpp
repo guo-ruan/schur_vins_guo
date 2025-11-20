@@ -145,30 +145,56 @@ namespace svo
         VLOG(1) << "Destructed SVO.";
     }
 
-    void SvoInterface::processImageBundle(
-        const std::vector<cv::Mat> &images,
-        const int64_t timestamp_nanoseconds)
+    /**
+ * @brief 处理图像束（多相机图像）
+ * @param images 输入图像数组，在双目系统中包含左右目图像
+ * @param timestamp_nanoseconds 图像时间戳（纳秒）
+ * 
+ * 该函数是SVO系统视觉处理的核心入口，主要完成以下工作：
+ * 1. 初始化和配置后端优化器（如果启用了Ceres后端）
+ * 2. 将图像束和时间戳传递给SVO系统进行处理
+ * 
+ * 该函数是连接ROS接口层与SVO核心算法层的关键桥梁
+ */
+void SvoInterface::processImageBundle(
+    const std::vector<cv::Mat> &images,       // 输入图像数组，多相机情况下存储所有相机图像
+    const int64_t timestamp_nanoseconds)      // 图像采集时间戳（纳秒精度）
+{
+    // 检查SVO系统的后端优化器是否有效，如果无效则需要初始化
+    if (!svo_->isBackendValid()) 
     {
-        if (!svo_->isBackendValid()) // 检查SVO系统的后端优化器是否有效
+        // 从ROS参数服务器获取配置，判断是否使用Ceres后端优化器
+        if (vk::param<bool>(pnh_, "use_ceres_backend", false, true))
         {
-            if (vk::param<bool>(pnh_, "use_ceres_backend", false, true))
+            // 使用工厂方法创建并初始化Ceres后端优化器
+            ceres_backend_interface_ =
+                ceres_backend_factory::makeBackend(pnh_, ncam_); 
+            
+            // 如果系统中配置了IMU处理器，则进行IMU相关设置
+            if (imu_handler_)
             {
-                ceres_backend_interface_ =
-                    ceres_backend_factory::makeBackend(pnh_, ncam_); // 创建并初始化后端优化器
-                if (imu_handler_)
-                {
-                    svo_->setBundleAdjuster(ceres_backend_interface_);                       // 将Ceres后端接口设置为SVO的Bundle Adjuster
-                    ceres_backend_interface_->setImu(imu_handler_);                          // 将IMU处理器与后端优化器关联
-                    ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_); // 将Ceres后端接口设置为SVO的Bundle Adjuster
-                }
-                else
-                {
-                    SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
-                }
+                // 将Ceres后端接口设置为SVO的Bundle Adjuster
+                svo_->setBundleAdjuster(ceres_backend_interface_);                       
+                
+                // 将IMU处理器与后端优化器关联，使优化器能够使用IMU数据
+                ceres_backend_interface_->setImu(imu_handler_);                          
+                
+                // 创建并配置Ceres后端的结果发布器，用于发布优化结果
+                ceres_backend_interface_->makePublisher(pnh_, ceres_backend_publisher_); 
+            }
+            else
+            {
+                // 如果没有配置IMU处理器但尝试使用Ceres后端，则输出错误信息
+                SVO_ERROR_STREAM("Cannot use ceres backend without using imu");
             }
         }
-        svo_->addImageBundle(images, timestamp_nanoseconds); // 视觉前端的入口
     }
+    
+    // 调用SVO核心系统的addImageBundle方法，将图像束和时间戳传递给视觉前端进行处理
+    // 这是SVO视觉处理的实际入口点
+    svo_->addImageBundle(images, timestamp_nanoseconds); 
+}
+
 
     void SvoInterface::publishResults(
         const std::vector<cv::Mat> &images,
@@ -395,42 +421,61 @@ namespace svo
         imageCallbackPostprocessing();
     }
 
-    void SvoInterface::stereoCallback(
-        const sensor_msgs::ImageConstPtr &msg0,
-        const sensor_msgs::ImageConstPtr &msg1)
+    /**
+ * @brief 双目相机图像回调函数
+ * @param msg0 左目相机图像消息指针
+ * @param msg1 右目相机图像消息指针
+ * 
+ * 该函数处理接收到的双目相机图像对，执行灰度转换、IMU先验对齐、图像处理和结果发布等操作
+ * 是SVO系统处理双目图像输入的主要入口函数
+ */
+void SvoInterface::stereoCallback(
+    const sensor_msgs::ImageConstPtr &msg0,  // 左目相机图像消息
+    const sensor_msgs::ImageConstPtr &msg1)  // 右目相机图像消息
+{
+    // 判断是否空闲模式，若是则直接返回不处理
+    if (idle_)
+        return;
+
+    // 图像灰度化处理，将ROS图像消息转换为OpenCV灰度图像格式
+    cv::Mat img0, img1;
+    try
     {
-        // 判断是否空闲
-        if (idle_)
-            return;
-
-        // 图像灰度化
-        cv::Mat img0, img1;
-        try
-        {
-            img0 = cv_bridge::toCvShare(msg0, "mono8")->image;
-            img1 = cv_bridge::toCvShare(msg1, "mono8")->image;
-        }
-        catch (cv_bridge::Exception &e)
-        {
-            ROS_ERROR("cv_bridge exception: %s", e.what());
-        }
-
-        if (!setImuPrior(msg0->header.stamp.toNSec()))
-        {
-            VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
-            return;
-        }
-
-        imageCallbackPreprocessing(msg0->header.stamp.toNSec()); // 空实现，不执行
-
-        processImageBundle({img0, img1}, msg0->header.stamp.toNSec());
-        publishResults({img0, img1}, msg0->header.stamp.toNSec());
-
-        if (svo_->stage() == Stage::kPaused && automatic_reinitialization_)
-            svo_->start();
-
-        imageCallbackPostprocessing();
+        // 使用cv_bridge将ROS图像消息转换为CV_8UC1(mono8)灰度图像
+        img0 = cv_bridge::toCvShare(msg0, "mono8")->image;
+        img1 = cv_bridge::toCvShare(msg1, "mono8")->image;
     }
+    catch (cv_bridge::Exception &e)
+    {
+        // 捕获转换异常并记录错误日志
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+    }
+
+    // 初始化时根据IMU信息计算Z轴方向，后面使用两帧图像之间的IMU旋转增量作为先验
+    if (!setImuPrior(msg0->header.stamp.toNSec()))
+    {
+        VLOG(3) << "Could not align gravity! Attempting again in next iteration.";
+        return;
+    }
+
+    // 图像回调预处理（当前为空实现，但保留接口以便扩展）
+    imageCallbackPreprocessing(msg0->header.stamp.toNSec());
+
+    // 处理图像对，执行视觉里程计算法核心逻辑
+    // 将左右目图像打包为数组传入，使用左目图像的时间戳
+    processImageBundle({img0, img1}, msg0->header.stamp.toNSec());
+    
+    // 发布处理结果（轨迹、特征点等可视化信息）
+    publishResults({img0, img1}, msg0->header.stamp.toNSec());
+
+    // 检查SVO状态，如果处于暂停状态且启用了自动重初始化，则启动系统
+    if (svo_->stage() == Stage::kPaused && automatic_reinitialization_)
+        svo_->start();
+
+    // 图像回调后处理（可用于释放资源等操作）
+    imageCallbackPostprocessing();
+}
+
 
     // IMU回调函数, 处理IMU测量数据
     void SvoInterface::imuCallback(const sensor_msgs::ImuConstPtr &msg)

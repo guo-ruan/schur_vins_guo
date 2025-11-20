@@ -286,35 +286,64 @@ namespace svo
         return true;
     }
 
-    bool ImuHandler::getRelativeRotationPrior(
-        const double old_cam_timestamp,
-        const double new_cam_timestamp,
-        bool delete_old_measurements,
-        Quaternion &R_oldimu_newimu)
+    /**
+ * @brief 计算两个时间戳之间IMU坐标系的相对旋转先验
+ * @details 基于IMU陀螺仪数据，计算从旧相机帧时间戳到新相机帧时间戳之间的相对旋转四元数
+ *          该函数为视觉惯性融合提供IMU预测的旋转约束
+ * 
+ * @param[in] old_cam_timestamp 旧相机帧的时间戳（秒）
+ * @param[in] new_cam_timestamp 新相机帧的时间戳（秒）
+ * @param[in] delete_old_measurements 是否删除处理完的旧IMU测量数据
+ * @param[out] R_oldimu_newimu 输出参数：从旧IMU时刻到新IMU时刻的旋转四元数
+ * @return 计算是否成功
+ */
+bool ImuHandler::getRelativeRotationPrior(
+    const double old_cam_timestamp,     // 旧相机帧时间戳（秒）
+    const double new_cam_timestamp,     // 新相机帧时间戳（秒）
+    bool delete_old_measurements,       // 是否删除不再需要的旧测量数据
+    Quaternion &R_oldimu_newimu)        // 输出：相对旋转四元数
+{
+    // 存储两个时间戳之间的IMU测量数据
+    ImuMeasurements measurements;
+    
+    // 获取指定时间范围内的IMU测量数据
+    // 如果获取失败（数据不足或时间范围无效），则返回false
+    if (!getMeasurements(
+            old_cam_timestamp, new_cam_timestamp, delete_old_measurements, measurements))
+        return false;
+
+    // 初始化旋转四元数为单位矩阵（无旋转状态）
+    R_oldimu_newimu.setIdentity();
+    
+    // 从最新的测量开始反向迭代（从新到旧处理数据）
+    ImuMeasurements::reverse_iterator it = measurements.rbegin();
+    ImuMeasurements::reverse_iterator it_plus = measurements.rbegin();
+    ++it_plus;  // 指向当前测量的下一个（更旧的）测量
+    
+    // 遍历所有IMU测量数据进行旋转积分
+    for (; it != measurements.rend(); ++it, ++it_plus)
     {
-        ImuMeasurements measurements;
-        if (!getMeasurements(
-                old_cam_timestamp, new_cam_timestamp, delete_old_measurements, measurements))
-            return false;
+        double dt = 0.0;
+        // 计算当前测量与下一个测量之间的时间间隔
+        if (it_plus == measurements.rend()) // 处理最后一个（最新的）测量
+            // 对于最新测量，计算其到新相机帧的时间差（考虑IMU-相机时间延迟）
+            dt = new_cam_timestamp - imu_calib_.delay_imu_cam - it->timestamp_;
+        else
+            // 对于中间测量，使用相邻两个IMU测量的时间差
+            dt = it_plus->timestamp_ - it->timestamp_;
 
-        // integrate all measurements from t1 to t2
-        R_oldimu_newimu.setIdentity();
-        ImuMeasurements::reverse_iterator it = measurements.rbegin();
-        ImuMeasurements::reverse_iterator it_plus = measurements.rbegin();
-        ++it_plus;
-        for (; it != measurements.rend(); ++it, ++it_plus)
-        {
-            double dt = 0.0;
-            if (it_plus == measurements.rend()) // only for newest measurement
-                dt = new_cam_timestamp - imu_calib_.delay_imu_cam - it->timestamp_;
-            else
-                dt = it_plus->timestamp_ - it->timestamp_;
-
-            const Eigen::Vector3d omega_corrected = it->angular_velocity_ - omega_bias_;
-            R_oldimu_newimu = R_oldimu_newimu * Quaternion::exp(omega_corrected * dt);
-        }
-        return true;
+        // 角速度去偏：从原始角速度中减去当前估计的角速度偏置
+        const Eigen::Vector3d omega_corrected = it->angular_velocity_ - omega_bias_;
+        
+        // 旋转积分：使用指数映射将角速度向量转换为旋转四元数，并累积到结果中
+        // Quaternion::exp()将角速度向量（乘以时间dt）映射为等效的旋转四元数
+        R_oldimu_newimu = R_oldimu_newimu * Quaternion::exp(omega_corrected * dt);
     }
+    
+    // 成功计算出相对旋转先验
+    return true;
+}
+
 
     bool ImuHandler::addImuMeasurement(
         const ImuMeasurement &m)
